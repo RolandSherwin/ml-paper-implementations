@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from tensorflow._api.v2 import data
 
 
-class History():
+class HistoryPlotter():
     """Various ways to plot the training history
     """
 
@@ -96,16 +96,17 @@ class History():
         plt.show()
 
 
-class PreprocessData():
+class StandardizedDataset():
     """Returns a standard numpy output given tf.data.Dataset or list of numpy array
     The first dimension should be the number of examples, eg: (m,_,_,_). If tf.data.Dataset is
     a batch, then it should be (batches, batch_size, _, _)
 
     Arguments:
     dataset - should be tf.data.Dataset or [x,y] where x,y are numpy array
+    model - if model is present, we make predictions 
     """
 
-    def __init__(self, dataset) -> None:
+    def __init__(self, dataset, prediction) -> None:
 
         if isinstance(dataset, list) and isinstance(dataset[0], np.ndarray) and isinstance(dataset[1], np.ndarray):
             self.kind = 'numpy'
@@ -124,7 +125,7 @@ class PreprocessData():
         # print("Kind : " , self.kind)
 
     def generator(self):
-        """A generator that returns x,y one by one; S
+        """A generator that returns x,y one by one;
         """
         if self.kind == 'numpy':
             length = self.dataset[0].shape[0]
@@ -136,7 +137,7 @@ class PreprocessData():
             length = int(self.dataset.__len__())
 
             for x, y in self.dataset.take(length):
-                yield x, y
+                yield np.array(x), np.array(y)
 
         if self.kind == 'tfds_batch':
             num_batches = int(self.dataset.__len__())
@@ -144,7 +145,50 @@ class PreprocessData():
 
             for x_batch, y_batch in self.dataset.take(num_batches):
                 for i in range(batch_size):
-                    yield x_batch[i], y_batch[i]
+                    yield np.array(x_batch[i]), np.array(y_batch[i])
+
+
+class ImagePlotter(StandardizedDataset):
+    """Various ways to plot the images in a dataset.
+
+    Arguments:
+    dataset - should be tf.data.Dataset or [x,y] where x,y are numpy array
+    """
+
+    def __init__(self, dataset) -> None:
+        super().__init__(dataset=dataset)
+
+    def grid_plot(self, grid_size, fig_size=(10, 16), hspace=0, wspace=0, cmap='binary', axis='off', title=None):
+        """Plots the images in a grid
+
+        Arguments:
+        grid_size - a tuple of (rows, column)
+        fig_size - figure size
+        hspace - vertical gap between each image
+        wspace - horizontal gap between each image
+        cmap - coloramp
+        axis - to show x,y axis values
+        title - title of each subplot; can be 'y_one_hot'
+        """
+        fig, ax = plt.subplots(grid_size[0], grid_size[1], figsize=fig_size)
+        fig.subplots_adjust(hspace=hspace, wspace=wspace)
+
+        gen = self.generator()
+
+        for i in range(grid_size[0]):
+            for j in range(grid_size[1]):
+                x, y = next(gen)
+
+                # If image is of size h x w x 1 convert it to h x w
+                x_shape = x.shape
+                if len(x_shape) == 3 and x_shape[2] == 1:
+                    x = x.reshape(x_shape[0], x_shape[1])
+
+                ax[i, j].imshow(x, cmap=cmap)
+                ax[i, j].axis(axis)
+
+                if title == "y_one_hot":
+                    ax[i, j].set_title(np.argmax(y), fontsize=15)
 
 
 if __name__ == '__main__':
@@ -157,9 +201,13 @@ if __name__ == '__main__':
     # ---
     original_x = np.ones(shape=(10, 10))
     original_y = np.array([[1], [2], [3], [4], [5], [6], [7], [8], [9], [10]])
-    d = tf.data.Dataset.from_tensor_slices((original_x, original_y)).batch(2)
+    d = tf.data.Dataset.from_tensor_slices((original_x, original_y))
 
-    p = PreprocessData(d)
+    # p = StandardizedDataset(d)
 
-    for test_x, test_y in p.generator():
-        print(test_x, test_y)
+    # for test_x, test_y in p.generator():
+    #     print(test_x, test_y)
+
+    # ---
+    plotter = ImagePlotter(d)
+    plotter.grid_plot(grid_size=(2, 2))
