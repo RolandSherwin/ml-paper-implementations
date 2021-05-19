@@ -103,10 +103,10 @@ class StandardizedDataset():
 
     Arguments:
     dataset - should be tf.data.Dataset or [x,y] where x,y are numpy array
-    model - if model is present, we make predictions 
+    prediction - predicted y values. Keras returns predicted values as numpy array
     """
 
-    def __init__(self, dataset, prediction) -> None:
+    def __init__(self, dataset, prediction=None) -> None:
 
         if isinstance(dataset, list) and isinstance(dataset[0], np.ndarray) and isinstance(dataset[1], np.ndarray):
             self.kind = 'numpy'
@@ -121,31 +121,58 @@ class StandardizedDataset():
             raise TypeError(
                 "Only pass in list of numpy array or tf.data.Dataset")
 
-        self.dataset = dataset
+        if prediction is not None:
+            if isinstance(prediction, np.ndarray):
+                self.pred = True
+                self.dataset = dataset
+            else:
+                raise TypeError("Predictions must be ndarray")
+        else:
+            self.pred = False
+
+        self.prediction = prediction
         # print("Kind : " , self.kind)
+        # print("prediction? :", self.pred)
 
     def generator(self):
         """A generator that returns x,y one by one;
         """
+        # Numpy
         if self.kind == 'numpy':
             length = self.dataset[0].shape[0]
+            if self.pred:
+                for i in range(length):
+                    yield self.dataset[0][i], self.dataset[1][i], self.prediction[i]
+            else:
+                for i in range(length):
+                    yield self.dataset[0][i], self.dataset[1][i]
 
-            for i in range(length):
-                yield self.dataset[0][i], self.dataset[1][i]
-
+        # TFDS without batches
         if self.kind == 'tfds':
             length = int(self.dataset.__len__())
 
-            for x, y in self.dataset.take(length):
-                yield np.array(x), np.array(y)
+            if self.pred:
+                for count, (x, y) in enumerate(self.dataset.take(length)):
+                    yield np.array(x), np.array(y), self.prediction[count]
+            else:
+                for x, y in self.dataset.take(length):
+                    yield np.array(x), np.array(y)
 
+        # TFDS with batches
         if self.kind == 'tfds_batch':
             num_batches = int(self.dataset.__len__())
             batch_size = int(self.dataset._batch_size)
 
-            for x_batch, y_batch in self.dataset.take(num_batches):
-                for i in range(batch_size):
-                    yield np.array(x_batch[i]), np.array(y_batch[i])
+            if self.pred:
+                count = 0
+                for x_batch, y_batch in self.dataset.take(num_batches):
+                    for i in range(batch_size):
+                        yield np.array(x_batch[i]), np.array(y_batch[i]), self.prediction[count]
+                        count += 1
+            else:
+                for x_batch, y_batch in self.dataset.take(num_batches):
+                    for i in range(batch_size):
+                        yield np.array(x_batch[i]), np.array(y_batch[i])
 
 
 class ImagePlotter(StandardizedDataset):
@@ -201,13 +228,15 @@ if __name__ == '__main__':
     # ---
     original_x = np.ones(shape=(10, 10))
     original_y = np.array([[1], [2], [3], [4], [5], [6], [7], [8], [9], [10]])
-    d = tf.data.Dataset.from_tensor_slices((original_x, original_y))
+    predict_y = np.array([[11], [12], [13], [14], [15],
+                         [16], [17], [18], [19], [20]])
+    d = tf.data.Dataset.from_tensor_slices((original_x, original_y)).batch(2)
 
-    # p = StandardizedDataset(d)
+    p = StandardizedDataset(d, prediction=predict_y)
 
-    # for test_x, test_y in p.generator():
-    #     print(test_x, test_y)
+    for test_x, test_y, pred_y in p.generator():
+        print(test_x, test_y, pred_y)
 
     # ---
-    plotter = ImagePlotter(d)
-    plotter.grid_plot(grid_size=(2, 2))
+    # plotter = ImagePlotter(d)
+    # plotter.grid_plot(grid_size=(2, 2))
