@@ -3,6 +3,87 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 
+class StandardizedDataset():
+    """Returns a standard numpy output given tf.data.Dataset or list of numpy array
+    The first dimension should be the number of examples, eg: (m,_,_,_). If tf.data.Dataset is
+    a batch, then it should be (batches, batch_size, _, _)
+
+    Arguments:
+    dataset - should be tf.data.Dataset or [x,y] where x,y are numpy array
+    mode - if a trained model is passed, it will be made to predict the 'dataset' values.
+    """
+
+    def __init__(self, dataset, model=None) -> None:
+
+        if isinstance(dataset, list) and isinstance(dataset[0], np.ndarray) and isinstance(dataset[1], np.ndarray):
+            self.kind = 'numpy'
+        elif isinstance(dataset, tf.data.Dataset):
+            # check if it has batches
+            try:
+                dataset._batch_size
+                self.kind = 'tfds_batch'
+            except AttributeError:
+                self.kind = 'tfds'
+        else:
+            raise TypeError(
+                "Only pass in list of numpy array or tf.data.Dataset")
+
+        if model is not None:
+            if isinstance(model, tf.keras.Model):
+                self.model = model
+                self.pred = True
+            else:
+                raise TypeError("Model must be of tf.keras.Model class")
+        else:
+            self.pred = False
+
+        self.dataset = dataset
+        # print("Kind : ", self.kind)
+        # print("prediction? :", self.pred)
+
+    def generator(self):
+        """A generator that returns x,y,y_pred* one by one.
+        """
+        # Numpy
+        if self.kind == 'numpy':
+            length = self.dataset[0].shape[0]
+
+            # not tested prediction.
+            if self.pred:
+                for i in range(length):
+                    prediction = self.model.predict(self.dataset[0][i])
+                    yield self.dataset[0][i], self.dataset[1][i], prediction
+            else:
+                for i in range(length):
+                    yield self.dataset[0][i], self.dataset[1][i]
+
+        # TFDS without batches
+        if self.kind == 'tfds':
+            length = int(self.dataset.__len__())
+
+            # models are trained using batches, thus when calling model.predict() it expects input of shape (batch_size,_,_)
+            # thus not supporting prediction on non-batch tfds.
+            for x, y in self.dataset.take(length):
+                yield np.array(x), np.array(y)
+
+        # TFDS with batches
+        if self.kind == 'tfds_batch':
+            num_batches = int(self.dataset.__len__())
+            batch_size = int(self.dataset._batch_size)
+
+            # tested and working
+            if self.pred:
+                for x_batch, y_batch in self.dataset.take(num_batches):
+                    prediction = self.model.predict(x_batch)
+
+                    for i in range(batch_size):
+                        yield np.array(x_batch[i]), np.array(y_batch[i]), prediction[i]
+            else:
+                for x_batch, y_batch in self.dataset.take(num_batches):
+                    for i in range(batch_size):
+                        yield np.array(x_batch[i]), np.array(y_batch[i])
+
+
 class HistoryPlotter():
     """Various ways to plot the training history
     """
@@ -93,87 +174,6 @@ class HistoryPlotter():
         plt.show()
 
 
-class StandardizedDataset():
-    """Returns a standard numpy output given tf.data.Dataset or list of numpy array
-    The first dimension should be the number of examples, eg: (m,_,_,_). If tf.data.Dataset is
-    a batch, then it should be (batches, batch_size, _, _)
-
-    Arguments:
-    dataset - should be tf.data.Dataset or [x,y] where x,y are numpy array
-    mode - if a trained model is passed, it will be made to predict the 'dataset' values.
-    """
-
-    def __init__(self, dataset, model=None) -> None:
-
-        if isinstance(dataset, list) and isinstance(dataset[0], np.ndarray) and isinstance(dataset[1], np.ndarray):
-            self.kind = 'numpy'
-        elif isinstance(dataset, tf.data.Dataset):
-            # check if it has batches
-            try:
-                dataset._batch_size
-                self.kind = 'tfds_batch'
-            except AttributeError:
-                self.kind = 'tfds'
-        else:
-            raise TypeError(
-                "Only pass in list of numpy array or tf.data.Dataset")
-
-        if model is not None:
-            if isinstance(model, tf.keras.Model):
-                self.model = model
-                self.pred = True
-            else:
-                raise TypeError("Model must be of tf.keras.Model class")
-        else:
-            self.pred = False
-
-        self.dataset = dataset
-        # print("Kind : ", self.kind)
-        # print("prediction? :", self.pred)
-
-    def generator(self):
-        """A generator that returns x,y,y_pred* one by one.
-        """
-        # Numpy
-        if self.kind == 'numpy':
-            length = self.dataset[0].shape[0]
-
-            # not tested prediction.
-            if self.pred:
-                for i in range(length):
-                    prediction = self.model.predict(self.dataset[0][i])
-                    yield self.dataset[0][i], self.dataset[1][i], prediction
-            else:
-                for i in range(length):
-                    yield self.dataset[0][i], self.dataset[1][i]
-
-        # TFDS without batches
-        if self.kind == 'tfds':
-            length = int(self.dataset.__len__())
-
-            # models are trained using batches, thus when calling model.predict() it expects input of shape (batch_size,_,_)
-            # thus not supporting prediction on non-batch tfds.
-            for x, y in self.dataset.take(length):
-                yield np.array(x), np.array(y)
-
-        # TFDS with batches
-        if self.kind == 'tfds_batch':
-            num_batches = int(self.dataset.__len__())
-            batch_size = int(self.dataset._batch_size)
-
-            # tested and working
-            if self.pred:
-                for x_batch, y_batch in self.dataset.take(num_batches):
-                    prediction = self.model.predict(x_batch)
-
-                    for i in range(batch_size):
-                        yield np.array(x_batch[i]), np.array(y_batch[i]), prediction[i]
-            else:
-                for x_batch, y_batch in self.dataset.take(num_batches):
-                    for i in range(batch_size):
-                        yield np.array(x_batch[i]), np.array(y_batch[i])
-
-
 class ImagePlotter(StandardizedDataset):
     """Various ways to plot the images in a dataset.
 
@@ -243,38 +243,4 @@ if __name__ == '__main__':
     # ---
     # plotter = ImagePlotter(d)
     # plotter.grid_plot(grid_size=(2, 2))
-
-    # ---
-    from sklearn.preprocessing import OneHotEncoder
-    model = tf.keras.models.load_model(
-        "00-LeNet/run-LeNet-2021-05-19-16-21-01.h5")
-
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-    # Reshape x from 28x28 to 28x28x1
-    x_train = x_train.reshape(-1, 28, 28, 1)
-    x_test = x_test.reshape(-1, 28, 28, 1)
-
-    # Convert each element to an array; i.e., from (5000,) to (5000,1)
-    y_train = y_train.reshape(-1, 1)
-    y_test = y_test.reshape(-1, 1)
-
-    one_hot_encoder = OneHotEncoder(sparse=False)
-    one_hot_encoder.fit(y_train)
-    y_train = one_hot_encoder.transform(y_train)
-    y_test = one_hot_encoder.transform(y_test)
-
-    train = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-    test = tf.data.Dataset.from_tensor_slices((x_test, y_test))
-
-    def resize(image, label):
-        """Resize the image to 32x32x1
-        """
-        image = tf.image.resize_with_pad(image, 32, 32, method='bilinear')
-        # print(image.shape)
-        return image, label
-    train_ready = train.map(resize).batch(10)
-    test_read = test.map(resize).batch(10)
-
-    print("input shape: ", model.input_shape)
-    plotter = ImagePlotter(train_ready, model)
-    plotter.grid_plot(grid_size=(2, 2))
+    pass
