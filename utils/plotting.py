@@ -201,24 +201,54 @@ class ImagePlotter(StandardizedDataset):
 
         gen = self.generator()
 
-        for i in range(grid_size[0]):
-            for j in range(grid_size[1]):
-
-                data = next(gen)  # can be x,y or x,y,y_pred
+        # If you want only 1 row, indexing for axis changes.
+        if grid_size[0] == 1:
+            for i in range(grid_size[1]):
+                data = next(gen)
                 data = list(data)
 
-                # If image is of size h x w x 1 convert it to h x w
                 x_shape = data[0].shape
                 if len(x_shape) == 3 and x_shape[2] == 1:
                     data[0] = data[0].reshape(x_shape[0], x_shape[1])
+                if x_shape[2] >= 3:
+                    ax[i].imshow(
+                        tf.keras.preprocessing.image.array_to_img(data[0])
+                    )
+                else:
+                    ax[i].imshow(data[0], cmap=cmap)
 
-                ax[i, j].imshow(data[0], cmap=cmap)
-                ax[i, j].axis(axis)
-
+                ax[i].axis(axis)
                 if title == "y_one_hot":
-                    ax[i, j].set_title(np.argmax(data[1]), fontsize=15)
+                    ax[i].set_title(np.argmax(data[1]), fontsize=15)
                 elif title == "y_pred_one_hot":
-                    ax[i, j].set_title(np.argmax(data[2]), fontsize=15)
+                    ax[i].set_title(np.argmax(data[2]), fontsize=15)
+
+        # More then 1 row
+        else:
+            for i in range(grid_size[0]):
+                for j in range(grid_size[1]):
+
+                    data = next(gen)  # can be x,y or x,y,y_pred
+                    data = list(data)
+
+                    # If image is of size h x w x 1 convert it to h x w
+                    x_shape = data[0].shape
+                    if len(x_shape) == 3 and x_shape[2] == 1:
+                        data[0] = data[0].reshape(x_shape[0], x_shape[1])
+
+                    # If we have rgb, we gotta use array_to_img
+                    if x_shape[2] >= 3:
+                        ax[i, j].imshow(
+                            tf.keras.preprocessing.image.array_to_img(data[0])
+                        )
+                    else:
+                        ax[i, j].imshow(data[0], cmap=cmap)
+
+                    ax[i, j].axis(axis)
+                    if title == "y_one_hot":
+                        ax[i, j].set_title(np.argmax(data[1]), fontsize=15)
+                    elif title == "y_pred_one_hot":
+                        ax[i, j].set_title(np.argmax(data[2]), fontsize=15)
 
 
 if __name__ == '__main__':
