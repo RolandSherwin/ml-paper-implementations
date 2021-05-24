@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from tensorflow.python.data.ops.dataset_ops import PrefetchDataset
 
 
 class StandardizedDataset():
@@ -17,8 +18,13 @@ class StandardizedDataset():
 
         if isinstance(dataset, list) and isinstance(dataset[0], np.ndarray) and isinstance(dataset[1], np.ndarray):
             self.kind = 'numpy'
+
+        elif isinstance(dataset, PrefetchDataset):
+            # Not dealing with prefetch dataset with no batches
+            self.kind = 'tfds_batch'
+
         elif isinstance(dataset, tf.data.Dataset):
-            # check if it has batches
+            # Check if it has batches
             try:
                 dataset._batch_size
                 self.kind = 'tfds_batch'
@@ -38,6 +44,7 @@ class StandardizedDataset():
             self.pred = False
 
         self.dataset = dataset
+
         # print("Kind : ", self.kind)
         # print("prediction? :", self.pred)
 
@@ -69,7 +76,12 @@ class StandardizedDataset():
         # TFDS with batches
         if self.kind == 'tfds_batch':
             num_batches = int(self.dataset.__len__())
-            batch_size = int(self.dataset._batch_size)
+            try:
+                batch_size = int(self.dataset._batch_size)
+            # PrefetchDataset does not have ._batch_size
+            except AttributeError:
+                for x, y in self.dataset.take(1):
+                    batch_size = x.shape[0]
 
             # tested and working
             if self.pred:
@@ -86,6 +98,9 @@ class StandardizedDataset():
 
 class HistoryPlotter():
     """Various ways to plot the training history
+
+    Arguments:
+    history - the history dictionary, i.e., 'model_history.history'
     """
 
     def __init__(self, history: dict) -> None:
@@ -179,10 +194,13 @@ class ImagePlotter(StandardizedDataset):
 
     Arguments:
     dataset - should be tf.data.Dataset or [x,y] where x,y are numpy array
+    model - A trained tf model to dispaly the predictions.
+    label - dictionary with class number to class name
     """
 
-    def __init__(self, dataset, model=None) -> None:
+    def __init__(self, dataset, model=None, label=None) -> None:
         super().__init__(dataset=dataset, model=model)
+        self.label = label
 
     def grid_plot(self, grid_size, figsize=(10, 16), hspace=0, wspace=0, cmap='binary', axis='off', title=None):
         """Plots the images in a grid
@@ -245,10 +263,28 @@ class ImagePlotter(StandardizedDataset):
                         ax[i, j].imshow(data[0], cmap=cmap)
 
                     ax[i, j].axis(axis)
-                    if title == "y_one_hot":
-                        ax[i, j].set_title(np.argmax(data[1]), fontsize=15)
-                    elif title == "y_pred_one_hot":
-                        ax[i, j].set_title(np.argmax(data[2]), fontsize=15)
+
+                    # Set title. Two cases, with and without labels.
+                    if self.label is not None:
+                        true_class_num = np.argmax(data[1])
+                        true_class_name = self.label[true_class_num]
+                        if title == "y_one_hot":
+                            ax[i, j].set_title(true_class_name + f" ({true_class_num})",
+                                               fontsize=15)
+                        elif title == "y_pred_one_hot":
+                            pred_class_num = np.argmax(data[2])
+                            pred_class_name = self.label[pred_class_num]
+                            ax[i, j].set_title(f"{pred_class_name} (true: {true_class_name})",
+                                               fontsize=15)
+                    else:
+                        true_class_num = np.argmax(data[1])
+                        if title == "y_one_hot":
+                            ax[i, j].set_title(f"class_num: {true_class_num}",
+                                               fontsize=15)
+                        elif title == "y_pred_one_hot":
+                            pred_class_num = np.argmax(data[2])
+                            ax[i, j].set_title(f"Pred: {pred_class_num} (true: {true_class_num})",
+                                               fontsize=15)
 
 
 if __name__ == '__main__':
